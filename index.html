@@ -55,8 +55,9 @@
   .assistant table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; margin: 0 0 .6em; }
   .assistant td, .assistant th { border: 1px solid #444; padding: 4px 6px; }
   .assistant blockquote { margin: 0 0 .6em; padding-left: 10px; border-left: 3px solid #555; color: #aaa; }
-  .tool { font: 12.5px/1.4 ui-monospace, Menlo, monospace; color: #9da5b4; background: #252526; border: 1px solid #303030; border-radius: 8px; padding: 6px 9px; }
-  .tool .txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .msg.tool { margin: 1px 0; }
+  .tool { font: 12px/1.35 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: #6e7681; background: none; border: none; padding: 1px 0; }
+  .tool .txt { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .thinking, .other { font-size: 12px; color: #777; padding-left: 2px; }
   .thinking .thHead { display: block; width: 100%; background: none; border: none; color: #8ec7ff; font-size: 12.5px; padding: 4px 0; text-align: left; border-radius: 0; }
   .thinking .thHead.loading { opacity: .65; }
@@ -118,6 +119,12 @@
   #chatTools #pickModel { flex: 0 1 auto; min-width: 84px; overflow: hidden; text-overflow: ellipsis; }
   .row { display: flex; gap: 8px; min-width: 0; align-items: flex-end; }
   textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 32vh; padding: 9px 10px; resize: none; font-size: 16px; line-height: 1.35; }
+  #attachBar { display: none; gap: 8px; overflow-x: auto; padding: 2px 0; scrollbar-width: none; }
+  #attachBar.show { display: flex; }
+  #attachBar::-webkit-scrollbar { display: none; }
+  #attachBar .att { position: relative; flex: none; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; background: #333; }
+  #attachBar .att img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #attachBar .att button { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0; border: none; border-radius: 10px; background: #000a; color: #fff; font-size: 13px; line-height: 20px; }
   #img { flex: none; height: 40px; width: 40px; padding: 0; display: flex; align-items: center; justify-content: center; color: #bbb; }
   #mic { display: none; }
   body.voice #mic { flex: none; height: 40px; width: 40px; padding: 0; display: flex; align-items: center; justify-content: center; color: #bbb; }
@@ -164,7 +171,7 @@
   /* file links + viewer */
   .assistant code[data-file], .tool[data-file] { cursor: pointer; }
   .assistant code[data-file] { color: #6cb6ff; text-decoration: underline; text-decoration-color: #6cb6ff66; text-underline-offset: 2px; }
-  .tool[data-file] .txt::before { content: "📄 "; }
+  .tool[data-file] .txt::before { content: none; }
   #viewer { position: fixed; inset: 0; z-index: 25; background: #1e1e1e; display: none; flex-direction: column;
             padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   #viewer.open { display: flex; }
@@ -255,10 +262,11 @@
     <button id="pickHistory">历史</button>
     <button id="newChat">＋ 新建</button>
   </div>
+  <div id="attachBar"></div>
   <div class="row">
     <textarea id="text" rows="1" placeholder="发给 Cursor Agent…" enterkeyhint="send"></textarea>
     <button id="img" title="附加图片" aria-label="附加图片"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg></button>
-    <input id="imgFile" type="file" accept="image/*" hidden>
+    <input id="imgFile" type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,.jpg,.jpeg,.png,.heic,.heif,.webp,.gif" hidden>
     <button id="mic" title="语音输入" aria-label="语音输入"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
     <button id="send">发送</button>
   </div>
@@ -963,7 +971,10 @@ function renderItem(it) {
     if (it.f) el.dataset.file = it.f;
   }
   else el.textContent = it.t || '';
-  if (it.b && it.k !== 'human') el.insertAdjacentHTML('beforeend', `<div class="btns">${buttonsHtml(it.b, it.i)}</div>`);
+  if (it.b && it.k !== 'human') {
+    const labels = it.k === 'tool' ? it.b.filter(l => PRIMARY.test(l) || /^(run|skip|allow|accept|reject|deny|approve|keep|undo|continue|stop|cancel|retry|yes|no\b)/i.test(l)) : it.b;
+    if (labels.length) el.insertAdjacentHTML('beforeend', `<div class="btns">${buttonsHtml(labels, it.i)}</div>`);
+  }
   return el;
 }
 
@@ -979,7 +990,7 @@ function renderChat(chat) {
   $('pickModel').hidden = !chat?.model;
   if (chat?.mode) $('pickMode').textContent = chat.mode + ' ▾';
   if (chat?.model) $('pickModel').textContent = chat.model + ' ▾';
-  if (!chat) { itemsEl.replaceChildren(); renderQueue(false, []); renderQuestions(null); return; }
+  if (!chat) { itemsEl.replaceChildren(); renderAttach(); renderQueue(false, []); renderQuestions(null); return; }
   const stick = nearBottom();
   // Anchor on the first visible item so loading older messages doesn't jump.
   let anchor = null, anchorTop = 0;
@@ -1003,6 +1014,7 @@ function renderChat(chat) {
 
   $('actionBar').innerHTML = buttonsHtml(chat.global, 'g');
   $('actionBar').classList.toggle('show', chat.global.length > 0);
+  renderAttach(chat.images);
   renderQueue(chat.busy, chat.queued || [], chat.subagents || [], chat.readonly, chat.changed);
   renderQuestions(chat.readonly ? null : chat.questions);
 
@@ -1328,13 +1340,31 @@ text.addEventListener('focus', () => {
   setTimeout(pin, 300);
 });
 text.addEventListener('blur', () => { fitViewport(); });
-$('send').onclick = () => {
+function hasAttach() {
+  return $('attachBar').classList.contains('show') && $('attachBar').children.length > 0;
+}
+let sending = false;
+function doSend() {
+  if (sending) return;
   const v = text.value;
-  if (!v.trim()) return;
+  if (!v.trim() && !hasAttach()) return;
+  sending = true;
   send({ t: 'send', text: v, submit: true });
   text.value = ''; autosize();
   if (mode === 'chat') list.scrollTop = list.scrollHeight;
-};
+  setTimeout(() => { sending = false; }, 400);
+}
+$('send').onclick = doSend;
+text.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+  e.preventDefault();
+  doSend();
+});
+text.addEventListener('beforeinput', e => {
+  if (e.inputType !== 'insertLineBreak' && e.inputType !== 'insertParagraph') return;
+  e.preventDefault();
+  doSend();
+});
 
 /* ---------- voice input ---------- */
 // Android WebView has no Web Speech API, so the app uses the system recognizer through the bridge instead.
@@ -1362,6 +1392,18 @@ async function shrinkImage(file) {
   return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
 }
 
+function renderAttach(images) {
+  const bar = $('attachBar');
+  if (!images?.length) { bar.classList.remove('show'); bar.replaceChildren(); return; }
+  bar.classList.add('show');
+  bar.innerHTML = images.map(im =>
+    `<div class="att">${im.thumb ? `<img src="${im.thumb}" alt="">` : `<span>${esc(im.name || '')}</span>`}<button type="button" data-drop="${im.n}" aria-label="删除">×</button></div>`).join('');
+}
+$('attachBar').onclick = e => {
+  const n = e.target.dataset?.drop;
+  if (n == null) return;
+  send({ t: 'dropImage', n: Number(n) });
+};
 $('img').onclick = () => $('imgFile').click();
 $('imgFile').onchange = async () => {
   const file = $('imgFile').files[0];
