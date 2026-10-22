@@ -18,9 +18,10 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html { margin: 0; height: 100%; background: #252526; }
   body { margin: 0; background: #1e1e1e; color: #d4d4d4; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-         position: fixed; inset: 0; width: auto; height: auto; min-height: 100%; min-height: 100lvh; min-height: -webkit-fill-available;
+         position: fixed; top: 0; right: 0; bottom: 0; left: 0; height: -webkit-fill-available; height: 100lvh;
          display: flex; flex-direction: column; overflow: hidden;
          padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+  body.kb { top: var(--vvt, 0px); height: var(--vvh, 100lvh); bottom: auto; }
   button, select, textarea, input { font: inherit; color: #e6e6e6; background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 8px; }
   button { padding: 6px 12px; white-space: nowrap; cursor: pointer; }
   button:active { filter: brightness(1.3); }
@@ -43,6 +44,14 @@
   .view.active { display: flex; }
 
   /* chat view */
+  #chatTabs { flex: none; display: flex; gap: 6px; align-items: center; overflow-x: auto; padding: 6px 8px; background: #252526; border-bottom: 1px solid #333; scrollbar-width: none; }
+  #chatTabs::-webkit-scrollbar { display: none; }
+  #chatTabs .ctab { flex: none; display: flex; align-items: center; gap: 6px; max-width: 52vw; margin: 0; padding: 5px 10px; border-radius: 8px; background: #2a2a2a; font-size: 13px; color: #ccc; }
+  #chatTabs .ctab.on { background: #094771; border-color: #1177bb; color: #fff; }
+  #chatTabs .ctab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #chatTabs .ctab i { width: 7px; height: 7px; border-radius: 50%; background: #6a6a6a; flex: none; }
+  #chatTabs .ctab i.run { background: #4aa3ff; }
+  #chatTabs .ctab.plus { padding: 5px 11px; color: #ddd; }
   #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 12px 16px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; overflow-anchor: none; }
   #older { display: block; margin: 0 auto 10px; font-size: 13px; color: #aaa; background: transparent; }
   .msg { margin: 8px 0; min-width: 0; overflow-wrap: anywhere; }
@@ -117,7 +126,7 @@
   #ripple { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 2px solid #4af; pointer-events: none; opacity: 0; transition: opacity .4s; }
 
   /* composer */
-  footer { flex: none; background: #252526; border-top: 1px solid #333; padding: 6px 10px 8px; padding-bottom: max(8px, constant(safe-area-inset-bottom)); padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  footer { flex: none; margin-top: auto; background: #252526; border-top: 1px solid #333; padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   body.kb footer { padding-bottom: 8px; }
   #chatTools { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
   #chatTools::-webkit-scrollbar { display: none; }
@@ -230,6 +239,7 @@
 
 <main>
   <section id="chatView" class="view active">
+    <div id="chatTabs"></div>
     <div id="list">
       <button id="older">↑ 加载更早的消息</button>
       <div id="items"></div>
@@ -269,8 +279,6 @@
   <div id="chatTools">
     <button id="pickMode" hidden></button>
     <button id="pickModel" hidden></button>
-    <button id="pickHistory">历史</button>
-    <button id="newChat">＋ 新建</button>
   </div>
   <div class="row">
     <textarea id="text" rows="1" placeholder="发给 Cursor Agent…" enterkeyhint="send"></textarea>
@@ -323,24 +331,20 @@ let crop = store.get('crop') !== 'full';
 let frame = { w: 1000, h: 800 }, panel = null, zoom = 1, tapMode = 'tap', rightNext = false;
 let windows = [], currentWindow = null;
 
-// Pin the body to the screen edges. Only lift it when the keyboard is actually open — iOS
-// visualViewport is often ~90px shorter than innerHeight even with no keyboard (home indicator).
+// The page always fills the screen (100lvh). Only while the composer is focused do we shrink
+// it to the visible viewport, so the input sits on the keyboard. Shrinking it otherwise is what
+// left the dark band under the composer: iOS reports a short visualViewport even with no keyboard.
 let pickingFile = false;
-let baseHeight = 0;
 function fitViewport() {
   const vv = window.visualViewport;
-  if (!vv) return;
-  const layout = Math.max(window.innerHeight, document.documentElement.clientHeight);
-  if (!baseHeight || vv.height > baseHeight - 40) baseHeight = Math.max(baseHeight, layout, vv.height);
-  const overlap = Math.max(0, Math.round(baseHeight - vv.height - (vv.offsetTop || 0)));
-  const kb = !pickingFile && overlap > 180;
+  const typing = document.activeElement === document.getElementById('text') && !pickingFile && vv;
+  const overlap = typing ? Math.max(0, Math.round(window.innerHeight - vv.height - (vv.offsetTop || 0))) : 0;
+  const kb = overlap > 60;
   document.body.classList.toggle('kb', kb);
-  document.body.style.top = '0';
-  document.body.style.left = '0';
-  document.body.style.right = '0';
-  document.body.style.height = 'auto';
-  document.body.style.transform = '';
-  document.body.style.bottom = kb ? overlap + 'px' : '0';
+  if (kb) {
+    document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
+    document.documentElement.style.setProperty('--vvt', Math.round(vv.offsetTop || 0) + 'px');
+  }
   window.scrollTo(0, 0);
 }
 window.visualViewport?.addEventListener('resize', fitViewport);
@@ -1018,6 +1022,7 @@ function renderChat(chat) {
   $('pickModel').hidden = !chat?.model;
   if (chat?.mode) $('pickMode').textContent = chat.mode + ' ▾';
   if (chat?.model) $('pickModel').textContent = chat.model + ' ▾';
+  renderChatTabs(chat?.tabs, chat?.busy);
   if (!chat) { itemsEl.replaceChildren(); renderQueue(false, []); renderQuestions(null); return; }
   if (pendingBubble && chat.items) {
     const last = [...chat.items].reverse().find(x => x.k === 'human');
@@ -1116,7 +1121,6 @@ function renderQueue(busy, queued, subs = [], readonly = false, changed = 0) {
       + `<button data-q="${esc(q.id)}" data-a="send" title="打断当前这一轮，立刻发送">立即发送</button>`
       + `<button data-q="${esc(q.id)}" data-a="remove">删除</button></div>`).join('');
   }
-  if (changed && !readonly) html += `<button class="qh fold" data-changes>改动了 ${changed} 个文件 ›</button>`;
   bar.innerHTML = html;
   bar.classList.toggle('show', Boolean(html));
 }
@@ -1193,8 +1197,26 @@ document.addEventListener('click', async e => {
 
 $('pickMode').onclick = () => { status('读取模式列表…'); send({ t: 'openMenu', kind: 'mode' }); };
 $('pickModel').onclick = () => { status('读取模型列表…'); send({ t: 'openMenu', kind: 'model' }); };
-$('pickHistory').onclick = () => { status('读取历史对话…'); send({ t: 'openMenu', kind: 'history' }); };
-$('newChat').onclick = () => { send({ t: 'newChat' }); status('已新建对话'); };
+let tabSig = '';
+function renderChatTabs(tabs, busy) {
+  const bar = $('chatTabs');
+  const sig = JSON.stringify([tabs || [], !!busy]);
+  if (sig === tabSig) return;
+  tabSig = sig;
+  const x = bar.scrollLeft;
+  bar.innerHTML = (tabs || []).map(t => {
+    const run = t.busy || (t.on && busy);
+    return `<button type="button" class="ctab${t.on ? ' on' : ''}" data-tab="${esc(t.aria)}"><i class="${run ? 'run' : ''}"></i><span>${esc(t.label || '对话')}</span></button>`;
+  }).join('') + '<button type="button" class="ctab plus" data-new>＋</button><button type="button" class="ctab plus" data-hist>历史</button>';
+  bar.scrollLeft = x;
+}
+$('chatTabs').onclick = e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if ('new' in b.dataset) { send({ t: 'newChat' }); return status('已新建对话'); }
+  if ('hist' in b.dataset) { status('读取历史对话…'); return send({ t: 'openMenu', kind: 'history' }); }
+  if (b.dataset.tab && !b.classList.contains('on')) send({ t: 'chatTab', aria: b.dataset.tab });
+};
 
 /* ---------- file viewer ---------- */
 $('vBody').classList.toggle('wrap', store.get('wrap') !== 'off');
