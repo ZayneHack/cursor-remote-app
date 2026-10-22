@@ -1432,11 +1432,12 @@ async function doSend() {
   sending = true;
   pendingBubble = {
     text: v,
-    pics: files.map(x => x.tiny).filter(Boolean),
+    pics: files.map(x => x.tiny).filter(s => typeof s === 'string' && s.startsWith('data:')),
     ids: new Set((lastChat?.items || []).filter(x => x.k === 'human').map(x => x.i)),
   };
   clearAttach();
   text.value = ''; autosize();
+  if (pendingBubble.pics.length && lastChat) renderChat({ ...lastChat, items: [...(lastChat.items || [])] });
   if (mode === 'chat') list.scrollTop = list.scrollHeight;
   try {
     status(files.length ? '正在发送图片…' : '');
@@ -1561,7 +1562,7 @@ $('imgFile').onchange = async () => {
     if (!file || (!file.type.startsWith('image/') && !/\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name))) continue;
     let thumb = '';
     try { thumb = URL.createObjectURL(file); } catch {}
-    let tiny = thumb;
+    let tiny = '';
     try { tiny = await tinyThumb(file); } catch {}
     localAttach.push({ file, thumb, tiny });
   }
