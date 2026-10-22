@@ -79,6 +79,7 @@ const I18N = (() => {
     '立即发送这条消息？': 'Send this message now?', 'Agent 当前这一轮会被打断。': 'The Agent\'s current turn will be interrupted.',
     '删除这条排队消息？': 'Delete this queued message?',
     '附加图片': 'Attach image', '正在处理图片…': 'Processing image…', '读不了这张图片，换一张试试': "Couldn't read that image; try another",
+    '相册': 'Album', '拍照': 'Camera', '从相册多选，点一张也能用': 'Pick several from the album, or tap one',
     '图片已附加到 Cursor 输入框，写好文字后点发送': 'Image attached in Cursor; type your message and tap Send',
     '只支持 PNG / JPEG / GIF / WebP 图片': 'Only PNG / JPEG / GIF / WebP images are supported',
     'Cursor 没有接收这张图片（当前模型可能不支持图片）': "Cursor didn't accept the image (the current model may not support images)",
