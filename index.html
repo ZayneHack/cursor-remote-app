@@ -194,9 +194,13 @@
   #gateInput.code { font-size: 26px; letter-spacing: 8px; text-align: center; }
   #gateMsg.err { color: #f77; }
   #gateInfo { font-size: 12px; color: #777; }
+  #lanBar { display: none; flex: none; padding: 8px 12px; background: #3a3220; color: #e5c07b; font-size: 13px; line-height: 1.45; }
+  #lanBar.show { display: block; }
+  #lanBar a { color: #8ec7ff; }
 </style>
 </head>
 <body>
+<div id="lanBar"></div>
 <header>
   <span id="dot"></span>
   <button id="title"><span id="titleText">连接中…</span></button>
@@ -363,6 +367,15 @@ async function decryptUrl(keyText) {
 }
 
 const offline = msg => Object.assign(new Error(msg), { offline: true });
+function showLanHttpsHint() {
+  const bar = $('lanBar');
+  if (!bar) return;
+  const https = info?.https;
+  if (!info?.self || window.isSecureContext || !https) { bar.classList.remove('show'); return; }
+  bar.innerHTML = `当前是 HTTP，iPhone 开不了通知。用 Safari 打开 <a href="/ca.mobileconfig">安装证书</a>，在「设置 → 通用 → 关于本机 → 证书信任设置」打开完全信任，然后打开 <a href="${esc(https)}">${esc(https)}</a> 并加到主屏幕。`;
+  bar.classList.add('show');
+}
+
 async function resolveBase() {
   if (info.self) return location.origin;
   if (info.v !== 2 || !info.data) throw offline('电脑端还没有发布地址（或还在用旧版本），请在电脑上重启服务');
@@ -497,6 +510,7 @@ async function boot() {
   }
   info = res.ok ? await res.json().catch(() => null) : null;
   if (!info) return gate({ msg: '还没有找到电脑地址。\n请在电脑上运行 npm run public 并保持窗口开着，约 1 分钟后点重试。', err: true, retry: true });
+  showLanHttpsHint();
   if (pending) store.set('key', pending.key);
   try {
     base = await resolveBase();
@@ -785,6 +799,12 @@ async function enableNotify() {
     return status('通知已开启。华为等手机请在「设置 → 应用启动管理」里允许本 App 后台活动');
   }
   if (inApp) return status('请先在菜单里更新安卓 App，新版才支持通知', false);
+  if (!window.isSecureContext) {
+    const https = info?.https;
+    return status(https
+      ? `HTTP 下不能开通知。Safari 打开 /ca.mobileconfig 安装证书，信任后再打开 ${https}`
+      : '当前不是 HTTPS，无法开启 iPhone 通知', false);
+  }
   if (!webPush()) {
     const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
     return status(ios && !standalone() ? 'iPhone 要先「分享 → 添加到主屏幕」，从桌面图标打开后才能开启通知' : '这个浏览器不支持通知', false);
