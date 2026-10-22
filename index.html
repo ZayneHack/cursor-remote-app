@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,7 +16,7 @@
 <title>Cursor Remote</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; background: #1e1e1e; color: #d4d4d4; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  html, body { margin: 0; background: #1e1e1e; color: #d4d4d4; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; height: 100%; }
   body { position: fixed; left: 0; top: 0; width: 100%; height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
          padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   button, select, textarea, input { font: inherit; color: #e6e6e6; background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 8px; }
@@ -41,7 +41,7 @@
   .view.active { display: flex; }
 
   /* chat view */
-  #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 12px 16px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  #list { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 12px 16px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; overflow-anchor: none; }
   #older { display: block; margin: 0 auto 10px; font-size: 13px; color: #aaa; background: transparent; }
   .msg { margin: 8px 0; min-width: 0; overflow-wrap: anywhere; }
   .human { display: flex; justify-content: flex-end; }
@@ -58,6 +58,10 @@
   .tool { font: 12.5px/1.4 ui-monospace, Menlo, monospace; color: #9da5b4; background: #252526; border: 1px solid #303030; border-radius: 8px; padding: 6px 9px; }
   .tool .txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .thinking, .other { font-size: 12px; color: #777; padding-left: 2px; }
+  .thinking .thHead { display: block; width: 100%; background: none; border: none; color: #8ec7ff; font-size: 12.5px; padding: 4px 0; text-align: left; border-radius: 0; }
+  .thinking .thHead.loading { opacity: .65; }
+  .thinking .thBody { margin-top: 4px; color: #b0b0b0; font-size: 13.5px; line-height: 1.5; }
+  .thinking .thBody p { margin: 0 0 .55em; }
   .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .btns button { font-size: 13px; padding: 5px 10px; }
   .btns button.primary { font-weight: 600; }
@@ -296,12 +300,16 @@ let crop = store.get('crop') !== 'full';
 let frame = { w: 1000, h: 800 }, panel = null, zoom = 1, tapMode = 'tap', rightNext = false;
 let windows = [], currentWindow = null;
 
-// Keep the layout above the on-screen keyboard.
+// Keep the composer above the on-screen keyboard instead of scrolling the page to the top.
 function fitViewport() {
   const vv = window.visualViewport;
-  if (vv) document.body.style.height = vv.height + 'px';
+  if (!vv) return;
+  document.body.style.height = Math.round(vv.height) + 'px';
+  document.body.style.transform = vv.offsetTop ? `translateY(${Math.round(vv.offsetTop)}px)` : '';
+  window.scrollTo(0, 0);
 }
 window.visualViewport?.addEventListener('resize', fitViewport);
+window.visualViewport?.addEventListener('scroll', fitViewport);
 fitViewport();
 
 function status(text, ok = true) {
@@ -922,8 +930,14 @@ function renderItem(it) {
   const el = document.createElement('div');
   el.className = 'msg ' + it.k;
   if (it.k === 'human') el.innerHTML = `<div class="bubble">${esc(it.t || '')}</div>`;
-  // it.h comes from the whitelist sanitizer in server.mjs (pageHelpers.clean): plain tags only, text escaped.
+  // it.h comes from the whitelist sanitizer / markdown converter in server.mjs: plain tags only, text escaped.
   else if (it.k === 'assistant') el.innerHTML = it.h || '';
+  else if (it.k === 'thinking') {
+    const label = esc(it.t || 'Thought');
+    const hint = it.h ? '' : (it.open ? '' : ' · 点开查看');
+    el.innerHTML = `<button class="thHead" data-th="${esc(it.i)}">${label}${hint}</button>`
+      + (it.h ? `<div class="thBody">${it.h}</div>` : '');
+  }
   else if (it.k === 'tool') {
     el.innerHTML = `<div class="txt">${esc(it.t || '')}</div>`;
     if (it.f) el.dataset.file = it.f;
@@ -938,6 +952,7 @@ const nearBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight 
 let lastChat = null;
 function renderChat(chat) {
   lastChat = chat;
+  status('');
   $('empty').hidden = !!chat;
   $('older').hidden = !chat;
   $('pickMode').hidden = !chat?.mode;
@@ -1084,6 +1099,14 @@ function updateToBottom() {
 list.addEventListener('scroll', updateToBottom);
 $('toBottom').onclick = () => { list.scrollTop = list.scrollHeight; };
 $('older').onclick = () => send({ t: 'scrollChat', dy: -900 });
+$('items').addEventListener('click', e => {
+  const th = e.target.closest('[data-th]');
+  if (!th) return;
+  if (th.classList.contains('loading')) return;
+  th.classList.add('loading');
+  if (!th.textContent.includes('加载')) th.textContent = (th.textContent.replace(/ · 点开查看$/, '') + ' · 加载中…');
+  send({ t: 'expand', id: th.dataset.th });
+});
 
 document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-item]');
@@ -1272,6 +1295,19 @@ document.querySelectorAll('[data-key]').forEach(b => b.onclick = () => send({ t:
 const text = $('text');
 function autosize() { text.style.height = 'auto'; text.style.height = text.scrollHeight + 'px'; }
 text.addEventListener('input', autosize);
+text.addEventListener('focus', () => {
+  const wasBottom = nearBottom();
+  const y = list.scrollTop;
+  const pin = () => {
+    fitViewport();
+    list.scrollTop = wasBottom ? list.scrollHeight : y;
+  };
+  pin();
+  requestAnimationFrame(pin);
+  setTimeout(pin, 50);
+  setTimeout(pin, 300);
+});
+text.addEventListener('blur', () => { fitViewport(); });
 $('send').onclick = () => {
   const v = text.value;
   if (!v.trim()) return;
