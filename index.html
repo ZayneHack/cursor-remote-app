@@ -46,6 +46,9 @@
   .msg { margin: 8px 0; min-width: 0; overflow-wrap: anywhere; }
   .human { display: flex; justify-content: flex-end; }
   .human .bubble { max-width: 88%; background: #264f78; color: #fff; padding: 8px 12px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; }
+  .human .pics { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 6px; }
+  .human .pics:last-child { margin-bottom: 0; }
+  .human .pics img { width: 36px; height: 36px; object-fit: cover; border-radius: 5px; background: #0003; cursor: pointer; }
   .assistant { padding: 2px 2px; }
   .assistant p { margin: 0 0 .6em; }
   .assistant ul, .assistant ol { margin: 0 0 .6em; padding-left: 1.3em; }
@@ -125,18 +128,11 @@
   #attachBar::-webkit-scrollbar { display: none; }
   #attachBar .att { position: relative; flex: none; width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: #333; }
   #attachBar .att img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  #attachBar .att button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; border: none; border-radius: 11px; background: #000a; color: #fff; font-size: 14px; line-height: 22px; }
-  #photoPanel { display: none; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
-  body.photos #photoPanel { display: flex; }
-  #photoPanel .photoActs { display: flex; gap: 8px; }
-  #photoPanel .photoActs button { flex: 1; padding: 11px; font-size: 15px; }
-  #photoHint { font-size: 12px; color: #888; line-height: 1.4; }
-  #attachBar.show + #photoPanel #photoHint { display: none; }
+  #attachBar .att button { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; border: none; border-radius: 11px; background: #000a; color: #fff; font-size: 14px; line-height: 22px; z-index: 1; }
   #photoView { display: none; position: fixed; inset: 0; z-index: 40; background: #000d; align-items: center; justify-content: center; padding: env(safe-area-inset-top) 12px env(safe-area-inset-bottom); }
   #photoView.open { display: flex; }
   #photoView img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
   #img { flex: none; height: 40px; width: 40px; padding: 0; display: flex; align-items: center; justify-content: center; color: #bbb; }
-  #img.on { color: #fff; background: #0e639c; border-color: #1177bb; }
   #mic { display: none; }
   body.voice #mic { flex: none; height: 40px; width: 40px; padding: 0; display: flex; align-items: center; justify-content: center; color: #bbb; }
   #mic.on { color: #fff; background: #c33; border-color: #e55; animation: pulse 1.2s ease-in-out infinite; }
@@ -281,15 +277,7 @@
     <button id="send">发送</button>
   </div>
   <div id="attachBar"></div>
-  <div id="photoPanel">
-    <div class="photoActs">
-      <button type="button" id="pickAlbum">相册</button>
-      <button type="button" id="pickCam">拍照</button>
-    </div>
-    <div id="photoHint">从相册多选，点一张也能用</div>
-  </div>
-  <input id="imgAlbum" type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,.jpg,.jpeg,.png,.heic,.heif,.webp,.gif" multiple hidden>
-  <input id="imgCam" type="file" accept="image/*" capture="environment" hidden>
+  <input id="imgFile" type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,.jpg,.jpeg,.png,.heic,.heif,.webp,.gif" multiple hidden>
   <div id="msg"></div>
 </footer>
 <div id="photoView"><img alt=""></div>
@@ -333,12 +321,12 @@ let crop = store.get('crop') !== 'full';
 let frame = { w: 1000, h: 800 }, panel = null, zoom = 1, tapMode = 'tap', rightNext = false;
 let windows = [], currentWindow = null;
 
-// Keep the composer flush with the keyboard. File pickers and the in-app photo panel must not shrink the layout, or iOS leaves a black gap under the input.
+// Keep the composer flush with the keyboard. Opening the system photo picker must not shrink the layout, or iOS leaves a black gap under the input.
 let pickingFile = false;
 function fitViewport() {
   const vv = window.visualViewport;
   if (!vv) return;
-  const picking = pickingFile || document.body.classList.contains('photos');
+  const picking = pickingFile;
   const kb = !picking && (window.innerHeight - vv.height - (vv.offsetTop || 0) > 80);
   document.body.classList.toggle('kb', kb);
   if (picking || !kb) {
@@ -970,7 +958,6 @@ function setMode(m) {
   $('chatView').classList.toggle('active', m === 'chat');
   $('screenView').classList.toggle('active', m === 'screen');
   $('chatTools').hidden = m !== 'chat';
-  if (m !== 'chat') setPhotoPanel(false);
   if (authed) send({ t: 'mode', mode: m });
   if (m === 'screen') { layoutStage(); applyQuality(); }
 }
@@ -989,7 +976,11 @@ function buttonsHtml(labels, item) {
 function renderItem(it) {
   const el = document.createElement('div');
   el.className = 'msg ' + it.k;
-  if (it.k === 'human') el.innerHTML = `<div class="bubble">${esc(it.t || '')}</div>`;
+  if (it.k === 'human') {
+    const pics = it.pics || [];
+    const picHtml = pics.length ? `<div class="pics">${pics.map((src, n) => `<img data-pic="${esc(it.i)}" data-n="${n}" src="${src}" alt="">`).join('')}</div>` : '';
+    el.innerHTML = `<div class="bubble">${picHtml}${esc(it.t || '')}</div>`;
+  }
   // it.h comes from the whitelist sanitizer / markdown converter in server.mjs: plain tags only, text escaped.
   else if (it.k === 'assistant') el.innerHTML = it.h || '';
   else if (it.k === 'thinking') {
@@ -1022,7 +1013,16 @@ function renderChat(chat) {
   $('pickModel').hidden = !chat?.model;
   if (chat?.mode) $('pickMode').textContent = chat.mode + ' ▾';
   if (chat?.model) $('pickModel').textContent = chat.model + ' ▾';
-  if (!chat) { itemsEl.replaceChildren(); renderAttach(); renderQueue(false, []); renderQuestions(null); return; }
+  if (!chat) { itemsEl.replaceChildren(); renderQueue(false, []); renderQuestions(null); return; }
+  if (pendingBubble && chat.items) {
+    const last = [...chat.items].reverse().find(x => x.k === 'human');
+    if (last && chat.items.length > pendingBubble.seen && ((last.t || '').trim() === (pendingBubble.text || '').trim() || !pendingBubble.text)) {
+      bubblePics.set(last.i, pendingBubble.pics);
+      saveBubblePics();
+      pendingBubble = null;
+    }
+  }
+  for (const it of chat.items) if (it.k === 'human' && bubblePics.has(it.i)) it.pics = bubblePics.get(it.i);
   const stick = nearBottom();
   // Anchor on the first visible item so loading older messages doesn't jump.
   let anchor = null, anchorTop = 0;
@@ -1046,7 +1046,6 @@ function renderChat(chat) {
 
   $('actionBar').innerHTML = buttonsHtml(chat.global, 'g');
   $('actionBar').classList.toggle('show', chat.global.length > 0);
-  renderAttach(chat.images);
   renderQueue(chat.busy, chat.queued || [], chat.subagents || [], chat.readonly, chat.changed);
   renderQuestions(chat.readonly ? null : chat.questions);
 
@@ -1164,6 +1163,11 @@ list.addEventListener('scroll', updateToBottom);
 $('toBottom').onclick = () => { list.scrollTop = list.scrollHeight; };
 $('older').onclick = () => send({ t: 'scrollChat', dy: -900 });
 $('items').addEventListener('click', e => {
+  const pic = e.target.closest('img[data-pic]');
+  if (pic) {
+    const pics = bubblePics.get(pic.dataset.pic) || [];
+    return openPreview(pics[Number(pic.dataset.n)] || pic.src);
+  }
   const th = e.target.closest('[data-th]');
   if (!th) return;
   if (th.classList.contains('loading')) return;
@@ -1360,7 +1364,6 @@ const text = $('text');
 function autosize() { text.style.height = 'auto'; text.style.height = text.scrollHeight + 'px'; }
 text.addEventListener('input', autosize);
 text.addEventListener('focus', () => {
-  setPhotoPanel(false);
   const wasBottom = nearBottom();
   const y = list.scrollTop;
   const pin = () => {
@@ -1373,20 +1376,31 @@ text.addEventListener('focus', () => {
   setTimeout(pin, 300);
 });
 text.addEventListener('blur', () => { fitViewport(); });
-function hasAttach() {
-  return localAttach.length > 0 || remoteImages.length > 0;
-}
 let sending = false;
-function doSend() {
+async function doSend() {
   if (sending) return;
+  if (!(ws && ws.readyState === 1 && authed)) return status('未连接', false);
   const v = text.value;
-  if (!v.trim() && !hasAttach()) return;
+  const files = localAttach.slice();
+  if (!v.trim() && !files.length) return;
   sending = true;
-  setPhotoPanel(false);
-  send({ t: 'send', text: v, submit: true });
+  pendingBubble = { text: v, pics: files.map(x => x.tiny).filter(Boolean), seen: lastChat?.items?.length || 0 };
+  clearAttach();
   text.value = ''; autosize();
   if (mode === 'chat') list.scrollTop = list.scrollHeight;
-  setTimeout(() => { sending = false; }, 400);
+  try {
+    status(files.length ? '正在发送图片…' : '');
+    for (const item of files) {
+      const img = await shrinkImage(item.file);
+      const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(img); });
+      send({ t: 'image', data: url.slice(url.indexOf(',') + 1), name: img.name, type: img.type });
+    }
+    send({ t: 'send', text: v, submit: true });
+  } catch {
+    status('图片发送失败，请再试一次', false);
+  } finally {
+    sending = false;
+  }
 }
 $('send').onclick = doSend;
 text.addEventListener('keydown', e => {
@@ -1422,111 +1436,87 @@ async function shrinkImage(file) {
 }
 
 let localAttach = [];
-let remoteImages = [];
-let attachBusy = false;
-
-function setPhotoPanel(on) {
-  document.body.classList.toggle('photos', on);
-  $('img').classList.toggle('on', on);
-  if (on) text.blur();
-  pickingFile = false;
-  fitViewport();
+let pendingBubble = null;
+const bubblePics = new Map((() => { try { return JSON.parse(store.get('pics') || '[]'); } catch { return []; } })());
+function saveBubblePics() {
+  store.set('pics', JSON.stringify([...bubblePics.entries()].slice(-40)));
 }
-
-function renderAttach(remote) {
-  if (Array.isArray(remote)) {
-    remoteImages = remote;
-    if (!localAttach.some(x => x.file)) {
-      for (const x of localAttach) if (x.thumb?.startsWith('blob:')) try { URL.revokeObjectURL(x.thumb); } catch {}
-      localAttach = [];
-    }
-  }
-  const images = localAttach.length
-    ? localAttach.map(im => ({ n: im.id, thumb: im.thumb, name: im.name, local: true }))
-    : remoteImages.map(im => ({ n: im.n, thumb: im.thumb, name: im.name }));
+function openPreview(src) {
+  if (!src) return;
+  $('photoView').querySelector('img').src = src;
+  $('photoView').classList.add('open');
+}
+function clearAttach() {
+  for (const x of localAttach) if (x.thumb?.startsWith('blob:')) try { URL.revokeObjectURL(x.thumb); } catch {}
+  localAttach = [];
+  renderAttach();
+}
+function renderAttach() {
   const bar = $('attachBar');
-  if (!images.length) { bar.classList.remove('show'); bar.replaceChildren(); return; }
+  if (!localAttach.length) { bar.classList.remove('show'); bar.replaceChildren(); return; }
   bar.classList.add('show');
-  bar.innerHTML = images.map(im =>
-    `<div class="att" data-src="${esc(im.thumb || '')}">${im.thumb ? `<img src="${im.thumb}" alt="">` : `<span>${esc(im.name || '')}</span>`}<button type="button" data-drop="${esc(String(im.n))}" data-local="${im.local ? '1' : ''}" aria-label="删除">×</button></div>`).join('');
+  bar.innerHTML = localAttach.map((im, i) =>
+    `<div class="att" data-i="${i}"><img src="${im.thumb}" alt=""><button type="button" data-del="${i}" aria-label="删除">×</button></div>`).join('');
 }
 
 $('attachBar').onclick = e => {
-  const drop = e.target.dataset?.drop;
-  if (drop != null && drop !== '') {
-    if (e.target.dataset.local === '1') {
-      const hit = localAttach.find(x => x.id === drop);
-      if (hit?.thumb?.startsWith('blob:')) try { URL.revokeObjectURL(hit.thumb); } catch {}
-      localAttach = localAttach.filter(x => x.id !== drop);
-      renderAttach();
-    } else send({ t: 'dropImage', n: Number(drop) });
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    e.preventDefault();
+    e.stopPropagation();
+    const i = Number(del.dataset.del);
+    const hit = localAttach[i];
+    if (hit?.thumb?.startsWith('blob:')) try { URL.revokeObjectURL(hit.thumb); } catch {}
+    localAttach.splice(i, 1);
+    renderAttach();
     return;
   }
   const att = e.target.closest('.att');
-  if (att?.dataset.src) {
-    $('photoView').querySelector('img').src = att.dataset.src;
-    $('photoView').classList.add('open');
-  }
+  if (att) openPreview(localAttach[Number(att.dataset.i)]?.thumb);
 };
 $('photoView').onclick = () => {
   $('photoView').classList.remove('open');
   $('photoView').querySelector('img').src = '';
 };
 
-$('img').onclick = () => setPhotoPanel(!document.body.classList.contains('photos'));
-
-function openPicker(el) {
-  pickingFile = true;
-  fitViewport();
-  el.value = '';
-  el.click();
-}
 function donePicking() {
   pickingFile = false;
   fitViewport();
 }
-$('pickAlbum').onclick = () => openPicker($('imgAlbum'));
-$('pickCam').onclick = () => openPicker($('imgCam'));
-$('imgAlbum').addEventListener('cancel', donePicking);
-$('imgCam').addEventListener('cancel', donePicking);
+$('img').onclick = () => {
+  pickingFile = true;
+  fitViewport();
+  $('imgFile').value = '';
+  $('imgFile').click();
+};
+$('imgFile').addEventListener('cancel', donePicking);
 
-async function enqueueFiles(files) {
+async function tinyThumb(file) {
+  const bmp = await createImageBitmap(file);
+  const s = 72;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const k = Math.max(s / bmp.width, s / bmp.height);
+  const w = bmp.width * k, h = bmp.height * k;
+  c.getContext('2d').drawImage(bmp, (s - w) / 2, (s - h) / 2, w, h);
+  bmp.close?.();
+  return c.toDataURL('image/jpeg', 0.7);
+}
+
+$('imgFile').onchange = async () => {
+  const files = [...$('imgFile').files];
+  $('imgFile').value = '';
   donePicking();
   for (const file of files) {
     if (!file || (!file.type.startsWith('image/') && !/\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name))) continue;
-    const id = 'l' + Date.now().toString(36) + Math.random().toString(16).slice(2, 6);
     let thumb = '';
     try { thumb = URL.createObjectURL(file); } catch {}
-    localAttach.push({ id, name: file.name, thumb, file });
+    let tiny = thumb;
+    try { tiny = await tinyThumb(file); } catch {}
+    localAttach.push({ file, thumb, tiny });
   }
   renderAttach();
-  if (!attachBusy) drainAttach();
-}
-
-async function drainAttach() {
-  attachBusy = true;
-  while (localAttach.some(x => x.file)) {
-    const item = localAttach.find(x => x.file);
-    const file = item.file;
-    item.file = null;
-    status('正在处理图片…');
-    try {
-      const img = await shrinkImage(file);
-      const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(img); });
-      send({ t: 'image', data: url.slice(url.indexOf(',') + 1), name: img.name, type: img.type });
-    } catch {
-      if (item.thumb?.startsWith('blob:')) try { URL.revokeObjectURL(item.thumb); } catch {}
-      localAttach = localAttach.filter(x => x.id !== item.id);
-      renderAttach();
-      status('读不了这张图片，换一张试试', false);
-    }
-  }
-  attachBusy = false;
-  if (localAttach.length) status('图片已附加到 Cursor 输入框，写好文字后点发送');
-}
-
-$('imgAlbum').onchange = () => enqueueFiles([...$('imgAlbum').files]);
-$('imgCam').onchange = () => enqueueFiles([...$('imgCam').files]);
+};
 
 $('mic').onclick = () => {
   if (window.CursorRemoteApp?.voice) {
