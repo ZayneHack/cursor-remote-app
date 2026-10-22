@@ -582,6 +582,7 @@ function autoRetry() {
 function connect() {
   clearTimeout(retryTimer);
   ws = new WebSocket(base.replace(/^http/, 'ws') + '/ws');
+  ws.binaryType = 'arraybuffer';
   ws.onopen = () => ws.send(JSON.stringify({ t: 'auth', token: store.get('token') }));
   let rejected = false;
   ws.onclose = async () => {
@@ -600,6 +601,7 @@ function connect() {
     connect();
   };
   ws.onmessage = ev => {
+    if (ev.data instanceof ArrayBuffer) return onBinaryFrame(ev.data);
     const m = JSON.parse(ev.data);
     if (m.t === 'auth') {
       if (!m.ok) { rejected = true; return; }
@@ -613,6 +615,7 @@ function connect() {
       if (fromNotice) store.set('window', fromNotice);
       send({ t: 'attach', id: store.get('window') || '' });
       sentWidth = 0;
+      sentHeight = 0;
       applyQuality();
       send({ t: 'visible', v: document.visibilityState === 'visible' });
       send({ t: 'lang', v: I18N.lang });
@@ -1294,14 +1297,49 @@ $('vWrap').onclick = () => {
 /* ---------- screen view ---------- */
 const view = $('view'), stage = $('stage'), screen = $('screen');
 
+let blobUrl = '', frameBusy = false, queuedFrame = null;
 function onFrame(m) {
-  const resized = m.w !== frame.w || m.h !== frame.h;
-  frame = { w: m.w, h: m.h };
-  screen.src = 'data:image/jpeg;base64,' + m.data;
-  layoutStage();
-  if (resized) applyQuality();
+  const bin = Uint8Array.from(atob(m.data), c => c.charCodeAt(0));
+  paintJpeg(bin, m.w, m.h);
 }
-screen.onload = () => send({ t: 'ack' });
+function onBinaryFrame(buf) {
+  if (buf.byteLength < 8) return;
+  const u8 = new Uint8Array(buf);
+  if (u8[0] !== 0x43 || u8[1] !== 0x52 || u8[2] !== 0x46 || u8[3] !== 0x31) return;
+  const dv = new DataView(buf);
+  paintJpeg(u8.subarray(8), dv.getUint16(4), dv.getUint16(6));
+}
+function paintJpeg(jpeg, w, h) {
+  send({ t: 'ack' });
+  const url = URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }));
+  const resized = w !== frame.w || h !== frame.h;
+  frame = { w, h };
+  if (frameBusy) {
+    if (queuedFrame) URL.revokeObjectURL(queuedFrame.url);
+    queuedFrame = { url, resized };
+    return;
+  }
+  showFrame(url, resized);
+}
+function showFrame(url, resized) {
+  frameBusy = true;
+  const prev = blobUrl;
+  blobUrl = url;
+  const done = () => {
+    if (prev) URL.revokeObjectURL(prev);
+    layoutStage();
+    if (resized) applyQuality();
+    frameBusy = false;
+    if (queuedFrame) {
+      const q = queuedFrame;
+      queuedFrame = null;
+      showFrame(q.url, q.resized);
+    }
+  };
+  screen.onload = done;
+  screen.onerror = done;
+  screen.src = url;
+}
 
 const cropRect = () => crop && panel ? panel : [0, 0, frame.w, frame.h];
 
@@ -1336,14 +1374,17 @@ function setZoomAt(next, clientX, clientY) {
   view.scrollTop = contentY * zoom - vy;
 }
 
-let sentWidth = 0;
+let sentWidth = 0, sentHeight = 0;
 function applyQuality() {
   if (mode !== 'screen' || !authed) return;
-  const [, , rw] = cropRect();
-  const px = Math.min(2560, Math.round(view.clientWidth * zoom * devicePixelRatio * frame.w / rw));
-  if (Math.abs(px - sentWidth) < 40) return;
+  const [, , rw, rh] = cropRect();
+  const dpr = Math.max(2, devicePixelRatio || 2);
+  const px = Math.min(4096, Math.round(view.clientWidth * zoom * dpr * 1.15 * frame.w / Math.max(1, rw)));
+  const py = Math.min(4096, Math.round(view.clientHeight * zoom * dpr * 1.15 * frame.h / Math.max(1, rh)));
+  if (Math.abs(px - sentWidth) < 40 && Math.abs(py - sentHeight) < 40) return;
   sentWidth = px;
-  send({ t: 'quality', quality: 70, maxWidth: px });
+  sentHeight = py;
+  send({ t: 'quality', quality: 88, maxWidth: px, maxHeight: py });
 }
 
 function setCrop(on) {
