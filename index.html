@@ -1021,20 +1021,23 @@ function renderChat(chat) {
   $('empty').hidden = !!chat;
   $('older').hidden = !chat;
   $('pickMode').hidden = !chat?.mode;
-  $('pickModel').hidden = !chat?.model;
+  $('pickModel').hidden = !chat;
   if (chat?.mode) $('pickMode').textContent = chat.mode + ' ▾';
-  if (chat?.model) $('pickModel').textContent = chat.model + ' ▾';
+  if (chat) $('pickModel').textContent = (chat.model || '模型') + ' ▾';
   renderChatTabs(chat?.tabs, chat?.busy);
   if (!chat) { itemsEl.replaceChildren(); renderQueue(false, []); renderQuestions(null); return; }
-  if (pendingBubble && chat.items) {
-    const last = [...chat.items].reverse().find(x => x.k === 'human');
-    if (last && chat.items.length > pendingBubble.seen && ((last.t || '').trim() === (pendingBubble.text || '').trim() || !pendingBubble.text)) {
-      bubblePics.set(last.i, pendingBubble.pics);
+  if (pendingBubble?.pics?.length && chat.items) {
+    const fresh = [...chat.items].reverse().find(x => x.k === 'human' && !pendingBubble.ids.has(x.i));
+    if (fresh) {
+      bubblePics.set(fresh.i, pendingBubble.pics);
       saveBubblePics();
       pendingBubble = null;
     }
   }
   for (const it of chat.items) if (it.k === 'human' && bubblePics.has(it.i)) it.pics = bubblePics.get(it.i);
+  if (pendingBubble?.pics?.length) {
+    chat.items.push({ i: 'local-pending', k: 'human', t: pendingBubble.text, pics: pendingBubble.pics, ord: 999999 });
+  }
   const stick = nearBottom();
   // Anchor on the first visible item so loading older messages doesn't jump.
   let anchor = null, anchorTop = 0;
@@ -1427,7 +1430,11 @@ async function doSend() {
   const files = localAttach.slice();
   if (!v.trim() && !files.length) return;
   sending = true;
-  pendingBubble = { text: v, pics: files.map(x => x.tiny).filter(Boolean), seen: lastChat?.items?.length || 0 };
+  pendingBubble = {
+    text: v,
+    pics: files.map(x => x.tiny).filter(Boolean),
+    ids: new Set((lastChat?.items || []).filter(x => x.k === 'human').map(x => x.i)),
+  };
   clearAttach();
   text.value = ''; autosize();
   if (mode === 'chat') list.scrollTop = list.scrollHeight;
