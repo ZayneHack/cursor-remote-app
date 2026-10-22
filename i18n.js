@@ -44,6 +44,7 @@ const I18N = (() => {
     '请先在菜单里更新安卓 App，新版才支持通知': 'Update the Android app from the menu first; notifications need the new version',
     'iPhone 要先「分享 → 添加到主屏幕」，从桌面图标打开后才能开启通知': 'On iPhone, first use Share → Add to Home Screen, then open from the home-screen icon to enable notifications',
     '这个浏览器不支持通知': 'This browser does not support notifications', '没有通知权限，请在系统设置里允许本 App 发通知': 'No notification permission; allow it in system settings',
+    '当前不是 HTTPS，无法开启 iPhone 通知': 'This page is not HTTPS, so iPhone notifications cannot be turned on',
     '注册失败': 'Registration failed', '通知已开启': 'Notifications are on', '通知已关闭': 'Notifications are off',
     '安装到桌面': 'Add to home screen', '用 Safari 打开本页 → 点底部「分享」按钮 → 选「添加到主屏幕」。': 'Open this page in Safari → tap Share at the bottom → choose "Add to Home Screen".',
     '安装后从桌面图标打开，就是全屏 App。': 'Open it from the home-screen icon for a full-screen app.',
