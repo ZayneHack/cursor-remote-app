@@ -1377,10 +1377,14 @@ function setZoomAt(next, clientX, clientY) {
 let sentWidth = 0, sentHeight = 0;
 function applyQuality() {
   if (mode !== 'screen' || !authed) return;
-  const px = Math.round(Math.min(2400, view.clientWidth * zoom * Math.min(3, devicePixelRatio || 2)));
-  if (Math.abs(px - sentWidth) < 80) return;
+  const [, , rw, rh] = cropRect();
+  const dpr = Math.max(2, devicePixelRatio || 2);
+  const px = Math.min(4096, Math.round(view.clientWidth * zoom * dpr * 1.15 * frame.w / Math.max(1, rw)));
+  const py = Math.min(4096, Math.round(view.clientHeight * zoom * dpr * 1.15 * frame.h / Math.max(1, rh)));
+  if (Math.abs(px - sentWidth) < 40 && Math.abs(py - sentHeight) < 40) return;
   sentWidth = px;
-  send({ t: 'quality', maxWidth: px });
+  sentHeight = py;
+  send({ t: 'quality', quality: 88, maxWidth: px, maxHeight: py });
 }
 
 function setCrop(on) {
@@ -1409,22 +1413,10 @@ function ripple(e) {
   requestAnimationFrame(() => { el.style.transition = 'opacity .4s'; el.style.opacity = 0; });
 }
 
-let wheelBatch = null;
 function sendWheel(x, y, px, py) {
   const scale = frame.w / screen.getBoundingClientRect().width;
   const p = normXY(x, y);
-  const dx = px * scale * 1.5, dy = py * scale * 1.5;
-  if (wheelBatch) {
-    wheelBatch.x = p.x; wheelBatch.y = p.y;
-    wheelBatch.dx += dx; wheelBatch.dy += dy;
-    return;
-  }
-  wheelBatch = { x: p.x, y: p.y, dx, dy };
-  requestAnimationFrame(() => {
-    const b = wheelBatch;
-    wheelBatch = null;
-    if (b) send({ t: 'wheel', x: b.x, y: b.y, dx: b.dx, dy: b.dy });
-  });
+  send({ t: 'wheel', x: p.x, y: p.y, dx: px * scale * 1.5, dy: py * scale * 1.5 });
 }
 
 let down = null, pinch = null, ignoreTap = false;
